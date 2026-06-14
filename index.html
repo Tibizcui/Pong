@@ -116,6 +116,15 @@
     .score-num.right-num { color:var(--blush); }
     .vs-badge { font-family:'Playfair Display',serif; color:var(--muted); font-size:11px; text-align:center; line-height:1.5; }
 
+    /* ── Timer ── */
+    #timer-display {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px; font-weight: 700;
+      letter-spacing: .04em; line-height: 1;
+    }
+    #timer-display.urgent { color: #E87070; animation: pulse .6s ease-in-out infinite alternate; }
+    @keyframes pulse { from { opacity:1; } to { opacity:.4; } }
+
     /* ── Difficulty badge in game ── */
     .diff-badge {
       font-size:9px; letter-spacing:.12em; text-transform:uppercase;
@@ -291,7 +300,7 @@
       <div class="score-num left-num"   id="score-left">0</div>
     </div>
     <div class="vs-badge">
-      ⚜<br>∞<br>⚜<br>
+      <div id="timer-display">3:00</div>
       <span class="diff-badge" id="diff-badge" style="display:none"></span>
     </div>
     <div class="score-side">
@@ -458,6 +467,11 @@ let botMissing   = false;  // est-ce que le bot "laisse passer" intentionnelleme
 // Touch state
 const touch = { left:{ up:false, down:false }, right:{ up:false, down:false } };
 
+/* Timer */
+const GAME_DURATION = 3 * 60; // 3 minutes en secondes
+let timeLeft  = GAME_DURATION;
+let timerInterval = null;
+
 /* ═══════════════════════════════════════════════
    UI HELPERS
    ═══════════════════════════════════════════════ */
@@ -471,6 +485,34 @@ function showToast(msg, dur=2500) {
   setTimeout(() => t.classList.remove('show'), dur);
 }
 function setStatus(msg) { document.getElementById('game-status').textContent = msg; }
+
+function updateTimerDisplay() {
+  const m   = Math.floor(timeLeft / 60);
+  const s   = timeLeft % 60;
+  const str = `${m}:${String(s).padStart(2,'0')}`;
+  const el  = document.getElementById('timer-display');
+  el.textContent = str;
+  el.classList.toggle('urgent', timeLeft <= 30);
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (gamePaused) return;          // le timer se met en pause aussi
+    timeLeft--;
+    updateTimerDisplay();
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      // Temps écoulé → le meneur gagne
+      const winner = scores.left > scores.right ? 'left'
+                   : scores.right > scores.left  ? 'right'
+                   : playerSide;                  // égalité → côté joueur
+      endGame(winner, true);                      // true = fin par timer
+    }
+  }, 1000);
+}
+
+function stopTimer() { clearInterval(timerInterval); }
 
 /* ═══════════════════════════════════════════════
    WELCOME — Diff / Side  (solo uniquement)
@@ -510,7 +552,8 @@ function startGame() {
 
   scores = { left:0, right:0 };
   frameCount = 0;
-  botSide    = gameMode === 'solo' ? (playerSide === 'left' ? 'right' : 'left') : null;
+  timeLeft   = GAME_DURATION;
+  botSide    = playerSide === 'left' ? 'right' : 'left';
 
   resetBall(); resetPaddles();
   resetBotState();
@@ -559,9 +602,11 @@ function startGame() {
   if (pauseBtn) pauseBtn.textContent = '▶ Démarrer';
 
   showScreen('game-screen');
+  updateTimerDisplay();
   gamePaused  = true;
   gameRunning = true;
   if (animId) cancelAnimationFrame(animId);
+  startTimer();
   loop();
 }
 
@@ -672,10 +717,10 @@ function togglePause() {
 
 function stopGame() {
   if (!gameRunning) return;
-  // Déclenche la fin avec le leader actuel (ou égalité)
+  stopTimer();
   const winner = scores.left > scores.right ? 'left'
                : scores.right > scores.left  ? 'right'
-               : playerSide; // égalité → côté joueur par défaut
+               : playerSide;
   endGame(winner);
 }
 
@@ -977,8 +1022,9 @@ function drawPaddle(p, color) {
 /* ═══════════════════════════════════════════════
    END GAME
    ═══════════════════════════════════════════════ */
-function endGame(winningSide) {
+function endGame(winningSide, byTimer = false) {
   gameRunning = false;
+  stopTimer();
   cancelAnimationFrame(animId);
 
   const playerWon = winningSide === playerSide;
@@ -986,7 +1032,19 @@ function endGame(winningSide) {
   const loseScore = scores[winningSide === 'left' ? 'right' : 'left'];
 
   let title, text;
-  if (playerWon) {
+  if (byTimer) {
+    if (playerWon) {
+      title = '⏱️ Temps écoulé !';
+      text  = `${playerName} gagne ${winScore}–${loseScore} · Tu mènes au buzzer !`;
+    } else if (winScore === loseScore) {
+      title = '⏱️ Égalité !';
+      text  = `${winScore}–${loseScore} · Quel match serré !`;
+    } else {
+      const profile = BOT_PROFILES[difficulty];
+      title = '⏱️ Temps écoulé !';
+      text  = `Bot ${profile.label} gagne ${winScore}–${loseScore} · La revanche ?`;
+    }
+  } else if (playerWon) {
     title = '🎉 Victoire !';
     const taunts = ['Tu as battu le bot !', 'Impressionnant !', 'Le bot s\'incline devant toi !'];
     text = `${playerName} gagne ${winScore}–${loseScore} · ${taunts[Math.floor(Math.random()*taunts.length)]}`;
@@ -1066,19 +1124,23 @@ function renderLeaderboard() {
     el.innerHTML = '<div class="no-scores">Aucune partie encore.<br>Soyez le premier dans l\'histoire ! 🏆</div>';
     return;
   }
-  const rows = leaderboard.slice(0,20).map((e,i) => {
-    const rc = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+  const diffLabel = { easy:'🌸 Facile', medium:'⚡ Normal', hard:'🔥 Difficile', insane:'💀 Insane' };
+  const diffCls   = { easy:'easy', medium:'medium', hard:'hard', insane:'insane' };
+  const rows = leaderboard.filter(e => e.name).slice(0,20).map((e,i) => {
+    const rc    = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
     const dot   = `<span class="side-dot ${e.side==='left'?'dot-left':'dot-right'}"></span>`;
-    const tag   = e.tag ? `<span class="mode-tag ${e.tag.startsWith('Solo')?'solo':'duo'}">${esc(e.tag)}</span>` : '';
+    const diff  = e.tag && diffLabel[e.tag]
+      ? `<span class="diff-badge ${diffCls[e.tag]}" style="margin-left:4px;font-size:8px">${diffLabel[e.tag]}</span>`
+      : '';
     return `<tr>
       <td class="rank-cell ${rc}">${medal}</td>
-      <td class="winner-cell">${dot}${esc(e.name)}${tag}</td>
+      <td class="winner-cell">${dot}${esc(e.name)}${diff}</td>
       <td class="score-cell">${esc(e.scoreStr)}</td>
       <td class="date-cell">${esc(e.date||'')}</td>
     </tr>`;
   }).join('');
-  el.innerHTML = `<table class="lb-table"><thead><tr><th>#</th><th>Joueur</th><th>Score</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.innerHTML = `<table class="lb-table"><thead><tr><th>#</th><th>Joueur · Difficulté</th><th>Score</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderLBPreview() {
