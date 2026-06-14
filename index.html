@@ -362,15 +362,27 @@
 
 <!-- ══════════ END OVERLAY ══════════ -->
 <div id="overlay">
-  <div class="card">
-    <h2 id="overlay-title">🎉</h2>
-    <div class="big-score" id="overlay-score"></div>
-    <div class="result-text" id="overlay-text"></div>
-    <div class="overlay-btns">
-      <button class="btn-gold" onclick="restartGame()">Revanche 🏓</button>
-      <button class="btn-ghost" onclick="newPlayer()">Nouveau joueur</button>
-      <button class="btn-ghost" onclick="showLeaderboard()">Classement 🏆</button>
+  <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:10px;padding:16px;max-height:95vh;overflow-y:auto">
+
+    <!-- Résultat de la partie -->
+    <div class="card" style="text-align:center;flex-shrink:0">
+      <h2 id="overlay-title" style="font-size:22px;margin-bottom:4px">🎉</h2>
+      <div class="big-score" id="overlay-score"></div>
+      <div class="result-text" id="overlay-text"></div>
+      <div class="overlay-btns" style="margin-top:12px">
+        <button class="btn-gold" onclick="restartGame()">Revanche 🏓</button>
+        <button class="btn-ghost" onclick="newPlayer()">Nouveau joueur</button>
+      </div>
     </div>
+
+    <!-- Classement intégré -->
+    <div class="card" style="flex-shrink:0">
+      <h2 style="font-size:16px;margin-bottom:10px">🏆 Classement</h2>
+      <div id="overlay-lb">
+        <div style="text-align:center;color:var(--muted);font-size:12px;padding:16px">Chargement…</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -413,38 +425,46 @@ const BOT_PROFILES = {
   easy: {
     label: "🌸 Facile",
     cssClass: "easy",
-    reactionDelay: 18,    // réagit 18 frames après (≈0.3s de retard)
-    speedRatio: 0.45,     // raquette lente
-    errorPixels: 28,      // vise à ±28px de la balle → rate souvent
-    predictionFrames: 0,  // pas d'anticipation, suit juste la balle
-    missChance: 0.10      // 10% de chance de ne rien faire = laisse passer
+    ballSpeed: 3.5,          // lente → confortable pour débuter
+    maxBallSpeed: 8,         // plafond bas
+    reactionDelay: 18,
+    speedRatio: 0.45,
+    errorPixels: 28,
+    predictionFrames: 0,
+    missChance: 0.10
   },
   medium: {
     label: "⚡ Normal",
     cssClass: "medium",
+    ballSpeed: 4.8,          // vitesse classique
+    maxBallSpeed: 11,
     reactionDelay: 8,
     speedRatio: 0.65,
     errorPixels: 14,
-    predictionFrames: 8,  // anticipe un peu
+    predictionFrames: 8,
     missChance: 0.04
   },
   hard: {
     label: "🔥 Difficile",
     cssClass: "hard",
+    ballSpeed: 6.5,          // nettement plus rapide
+    maxBallSpeed: 14,
     reactionDelay: 3,
     speedRatio: 0.88,
     errorPixels: 6,
-    predictionFrames: 20, // bonne anticipation
+    predictionFrames: 20,
     missChance: 0.01
   },
   insane: {
     label: "💀 Insane",
     cssClass: "insane",
+    ballSpeed: 9.0,          // départ très rapide
+    maxBallSpeed: 18,        // plafond élevé
     reactionDelay: 0,
     speedRatio: 1.0,
     errorPixels: 1,
-    predictionFrames: 60, // prédit très loin
-    missChance: 0.0       // ne rate jamais
+    predictionFrames: 60,
+    missChance: 0.0
   }
 };
 
@@ -613,13 +633,15 @@ function startGame() {
 }
 
 function resetBall() {
+  const profile = BOT_PROFILES[difficulty] || BOT_PROFILES.medium;
+  const spd   = profile.ballSpeed;
   const angle = (Math.random() * Math.PI/3) - Math.PI/6;
   const dir   = Math.random() < .5 ? 1 : -1;
   ball = {
     x: GW/2, y: GH/2,
-    vx: Math.cos(angle) * BALL_SPEED * dir,
-    vy: Math.sin(angle) * BALL_SPEED,
-    r: 7, speed: BALL_SPEED, trail: []
+    vx: Math.cos(angle) * spd * dir,
+    vy: Math.sin(angle) * spd,
+    r: 7, speed: spd, trail: []
   };
 }
 
@@ -945,10 +967,11 @@ function checkPaddle(side) {
     : ball.x + ball.r >= p.x - 2     && ball.x + ball.r <= p.x + PAD_W;
   const inY = ball.y + ball.r >= p.y && ball.y - ball.r <= p.y + PAD_H;
   if (inX && inY) {
-    const hit   = (ball.y - (p.y + PAD_H/2)) / (PAD_H/2);
-    const angle = hit * (Math.PI / 3.5);
-    ball.speed  = Math.min(ball.speed * 1.05, 13);
-    const dir   = side === 'left' ? 1 : -1;
+    const maxSpd = (BOT_PROFILES[difficulty] || BOT_PROFILES.medium).maxBallSpeed;
+    const hit    = (ball.y - (p.y + PAD_H/2)) / (PAD_H/2);
+    const angle  = hit * (Math.PI / 3.5);
+    ball.speed   = Math.min(ball.speed * 1.05, maxSpd);
+    const dir    = side === 'left' ? 1 : -1;
     ball.vx = Math.cos(angle) * ball.speed * dir;
     ball.vy = Math.sin(angle) * ball.speed;
     if (side === 'left') ball.x = p.x + PAD_W + ball.r + 1;
@@ -1062,7 +1085,12 @@ function endGame(winningSide, byTimer = false) {
   document.getElementById('overlay-text').textContent  = text;
   document.getElementById('overlay').classList.add('show');
 
-  if (playerWon) saveScore(playerName, winScore, loseScore, playerSide, difficulty);
+  if (playerWon) {
+    await saveScore(playerName, winScore, loseScore, playerSide, difficulty);
+  } else {
+    await loadLeaderboard();
+  }
+  renderOverlayLeaderboard();
 }
 
 function restartGame() {
@@ -1102,6 +1130,7 @@ async function saveScore(name, won, lost, side, tag) {
     if (!r.ok) throw new Error(await r.text());
     showToast('Score sauvegardé ! 🏆');
     await loadLeaderboard();
+    renderOverlayLeaderboard();
   } catch(err) {
     console.error('Supabase save error:', err);
     leaderboard = local;
@@ -1115,19 +1144,29 @@ function getLocalScores() {
 
 async function loadLeaderboard() {
   try {
-    // Récupère les 50 meilleures victoires, triées par score décroissant
     const r = await fetch(
-      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts&order=won.desc,lost.asc,ts.asc&limit=50`,
+      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts&limit=200`,
       { headers: SB_HEADERS }
     );
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
-    // Normalise les champs pour le renderer existant
-    leaderboard = data.filter(e => e.name).map(e => ({
-      ...e,
-      scoreStr: e.score_str,
-      date:     e.game_date
-    }));
+
+    // Poids par difficulté pour le tri
+    const diffWeight = { insane: 4, hard: 3, medium: 2, easy: 1 };
+
+    leaderboard = data
+      .filter(e => e.name)
+      .map(e => ({ ...e, scoreStr: e.score_str, date: e.game_date }))
+      .sort((a, b) => {
+        const da = diffWeight[a.tag] || 0;
+        const db = diffWeight[b.tag] || 0;
+        if (db !== da) return db - da;   // difficulté la plus haute en premier
+        if (b.won !== a.won) return b.won - a.won;   // puis plus de points
+        if (a.lost !== b.lost) return a.lost - b.lost; // puis moins encaissés
+        return a.ts - b.ts;              // puis le plus ancien (premier à l'atteindre)
+      })
+      .slice(0, 50);
+
   } catch(err) {
     console.error('Supabase load error:', err);
     leaderboard = getLocalScores();
@@ -1164,16 +1203,44 @@ function renderLeaderboard() {
 function renderLBPreview() {
   const el = document.getElementById('lb-preview');
   if (!leaderboard.length) { el.innerHTML = '<div class="no-scores" style="padding:10px">Pas encore de scores !</div>'; return; }
+  const diffLabel = { easy:'🌸 Facile', medium:'⚡ Normal', hard:'🔥 Difficile', insane:'💀 Insane' };
+  const diffCls   = { easy:'easy', medium:'medium', hard:'hard', insane:'insane' };
   el.innerHTML = leaderboard.slice(0,3).map((e,i) => {
     const medal = i===0?'🥇':i===1?'🥈':'🥉';
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-      <span style="font-size:12px">${medal} <strong>${esc(e.name)}</strong></span>
-      <span style="color:var(--gold);font-family:'Playfair Display',serif;font-size:13px">${esc(e.scoreStr)}</span>
+    const diff  = e.tag && diffLabel[e.tag]
+      ? `<span class="diff-badge ${diffCls[e.tag]}" style="font-size:8px;padding:1px 5px;margin-left:5px">${diffLabel[e.tag]}</span>`
+      : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <span style="font-size:12px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${medal} <strong>${esc(e.name)}</strong>${diff}</span>
+      <span style="color:var(--gold);font-family:'Playfair Display',serif;font-size:13px;white-space:nowrap;margin-left:8px">${esc(e.scoreStr)}</span>
     </div>`;
   }).join('');
 }
 
 function showLeaderboard() { loadLeaderboard(); showScreen('leaderboard-screen'); }
+
+function renderOverlayLeaderboard() {
+  const el = document.getElementById('overlay-lb');
+  if (!el) return;
+  if (!leaderboard.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:12px">Aucun score encore.</div>';
+    return;
+  }
+  const diffLabel = { easy:'🌸', medium:'⚡', hard:'🔥', insane:'💀' };
+  const rows = leaderboard.slice(0, 10).map((e, i) => {
+    const medal   = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`;
+    const dlabel  = diffLabel[e.tag] || '';
+    // Highlight current player
+    const isCurrent = e.name === playerName && e.scoreStr === `${scores[playerSide]}–${scores[botSide]}`;
+    const style = isCurrent ? 'background:rgba(201,168,76,.12);border-radius:6px;' : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 4px;border-bottom:1px solid rgba(255,255,255,.04);${style}">
+      <span style="font-size:12px;min-width:22px">${medal}</span>
+      <span style="flex:1;font-size:12px;font-weight:600;color:var(--cream)">${esc(e.name)} <span style="color:var(--muted);font-weight:400">${dlabel}</span></span>
+      <span style="font-family:'Playfair Display',serif;color:var(--gold);font-size:13px">${esc(e.scoreStr)}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = rows;
+}
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ═══════════════════════════════════════════════
