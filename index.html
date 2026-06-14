@@ -378,12 +378,14 @@
 
 <script>
 /* ═══════════════════════════════════════════════
-   CONFIG
+   CONFIG SCORES — Supabase
    ═══════════════════════════════════════════════ */
-const JSONBIN_CONFIG = {
-  enabled: true,
-  binId:   "6a2f182bf5f4af5e29f1bee2",
-  apiKey:  "$2a$10$qc7TJpfXzYXYkhoHQfd7K.exHs61D/JjJRU77Vx/FeOttoDmR8DBm"
+const SB_URL = "https://tsuhpiuqgyupnqskugox.supabase.co";
+const SB_KEY = "sb_publishable_LpmIQCFTvhYFWl3hSlFi6g_m7j2qHhd";
+const SB_HEADERS = {
+  "Content-Type":  "application/json",
+  "apikey":        SB_KEY,
+  "Authorization": "Bearer " + SB_KEY
 };
 
 /* ═══════════════════════════════════════════════
@@ -1074,48 +1076,64 @@ function newPlayer() {
 }
 
 /* ═══════════════════════════════════════════════
-   LEADERBOARD
+   LEADERBOARD — Supabase REST API
    ═══════════════════════════════════════════════ */
 async function saveScore(name, won, lost, side, tag) {
   const entry = {
     name, won, lost, side, tag,
-    scoreStr: `${won}–${lost}`,
-    date: new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
+    score_str: `${won}–${lost}`,
+    game_date: new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
     ts: Date.now()
   };
-  let local = getLocalScores();
-  local.push(entry);
-  local.sort((a,b) => b.won-a.won || a.lost-b.lost || a.ts-b.ts);
+
+  // Sauvegarde locale toujours
+  const local = getLocalScores();
+  local.push({ ...entry, scoreStr: entry.score_str, date: entry.game_date });
+  local.sort((a,b) => b.won - a.won || a.lost - b.lost || a.ts - b.ts);
   localStorage.setItem('wedding_pong_scores', JSON.stringify(local));
 
-  if (JSONBIN_CONFIG.enabled) {
-    try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Access-Key':JSONBIN_CONFIG.apiKey} });
-      const d = await r.json();
-      const remote = (d.record || []);
-      remote.push(entry); remote.sort((a,b) => b.won-a.won || a.lost-b.lost || a.ts-b.ts);
-      const top = remote.slice(0,50);
-      await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
-        method:'PUT', headers:{'Content-Type':'application/json','X-Access-Key':JSONBIN_CONFIG.apiKey},
-        body: JSON.stringify(top)
-      });
-      leaderboard = top; showToast('Score sauvegardé ! 🏆');
-    } catch(err) { console.error('JSONBin save error:', err); leaderboard = local; showToast('Score sauvegardé localement ✓'); }
-  } else { leaderboard = local; showToast('Score sauvegardé ✓'); }
+  // Sauvegarde Supabase
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/scores`, {
+      method:  'POST',
+      headers: SB_HEADERS,
+      body:    JSON.stringify(entry)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    showToast('Score sauvegardé ! 🏆');
+    await loadLeaderboard();
+  } catch(err) {
+    console.error('Supabase save error:', err);
+    leaderboard = local;
+    showToast('Score sauvegardé localement ✓');
+  }
 }
 
 function getLocalScores() {
-  try { return JSON.parse(localStorage.getItem('wedding_pong_scores')||'[]'); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem('wedding_pong_scores') || '[]'); } catch { return []; }
 }
 
 async function loadLeaderboard() {
-  if (JSONBIN_CONFIG.enabled) {
-    try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Access-Key':JSONBIN_CONFIG.apiKey} });
-      const d = await r.json(); leaderboard = (d.record || []).filter(e => e.name);
-    } catch(err) { console.error('JSONBin load error:', err); leaderboard = getLocalScores(); }
-  } else { leaderboard = getLocalScores(); }
-  renderLeaderboard(); renderLBPreview();
+  try {
+    // Récupère les 50 meilleures victoires, triées par score décroissant
+    const r = await fetch(
+      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts&order=won.desc,lost.asc,ts.asc&limit=50`,
+      { headers: SB_HEADERS }
+    );
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    // Normalise les champs pour le renderer existant
+    leaderboard = data.filter(e => e.name).map(e => ({
+      ...e,
+      scoreStr: e.score_str,
+      date:     e.game_date
+    }));
+  } catch(err) {
+    console.error('Supabase load error:', err);
+    leaderboard = getLocalScores();
+  }
+  renderLeaderboard();
+  renderLBPreview();
 }
 
 function renderLeaderboard() {
