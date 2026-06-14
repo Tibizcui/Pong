@@ -273,15 +273,17 @@
 
     <div class="field-label">Votre raquette</div>
     <div class="side-pick">
-      <button class="side-btn" id="btn-left"  onclick="selectSide('left')">
-        🥂 Gauche<br><small style="color:var(--muted);font-size:10px">Z / S</small>
-      </button>
-      <button class="side-btn" id="btn-right" onclick="selectSide('right')">
-        🌸 Droite<br><small style="color:var(--muted);font-size:10px">↑ / ↓</small>
+      <button class="side-btn selected-left" id="btn-left" style="cursor:default;max-width:180px">
+        🥂 Gauche &nbsp;·&nbsp; <small style="color:var(--muted);font-size:10px">Bot à droite</small>
       </button>
     </div>
 
     <button class="btn-gold" id="start-btn" onclick="startGame()" disabled>Jouer ! 🏓</button>
+
+    <div style="margin-top:10px;font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;line-height:1.7">
+      📱 Mobile · Glissez le doigt sur le terrain<br>
+      🖱️ PC · Clic gauche maintenu + glisser · <span style="opacity:.7">Z/S pour la raquette</span>
+    </div>
   </div>
 
   <div class="divider"></div>
@@ -548,8 +550,9 @@ function stopTimer() { clearInterval(timerInterval); }
 /* ═══════════════════════════════════════════════
    WELCOME — Diff / Side  (solo uniquement)
    ═══════════════════════════════════════════════ */
-// Mode toujours solo
-gameMode = 'solo';
+// Mode toujours solo, raquette toujours gauche
+gameMode   = 'solo';
+playerSide = 'left';
 
 function selectDiff(d) {
   difficulty = d;
@@ -570,7 +573,7 @@ function selectSide(side) {
 document.getElementById('player-name').addEventListener('input', updateStartBtn);
 function updateStartBtn() {
   const name = document.getElementById('player-name').value.trim();
-  document.getElementById('start-btn').disabled = !(name && difficulty && playerSide);
+  document.getElementById('start-btn').disabled = !(name && difficulty);
 }
 
 /* ═══════════════════════════════════════════════
@@ -655,6 +658,9 @@ function resetBall() {
     vy: Math.sin(angle) * spd,
     r: 7, speed: spd, trail: []
   };
+  // Met à jour l'affichage vitesse dès la remise en jeu
+  const speedEl = document.getElementById('speed-val');
+  if (speedEl) speedEl.textContent = Math.round(spd * SPEED_TO_KMH);
 }
 
 function resetPaddles() {
@@ -945,15 +951,11 @@ function update() {
 
   ball.x += ball.vx; ball.y += ball.vy;
 
-  // ── Vitesse max ──
+  // ── Vitesse courante + max ──
   const currentSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
   if (currentSpeed > maxSpeedReached) maxSpeedReached = currentSpeed;
-  // Mise à jour affichage toutes les 6 frames (évite le clignotement)
-  if (frameCount % 6 === 0) {
-    const kmh = Math.round(currentSpeed * SPEED_TO_KMH);
-    const el  = document.getElementById('speed-val');
-    if (el) el.textContent = kmh;
-  }
+  const speedEl = document.getElementById('speed-val');
+  if (speedEl) speedEl.textContent = Math.round(currentSpeed * SPEED_TO_KMH);
 
   if (ball.y - ball.r <= 0)  { ball.y = ball.r;      ball.vy *= -1; }
   if (ball.y + ball.r >= GH) { ball.y = GH - ball.r; ball.vy *= -1; }
