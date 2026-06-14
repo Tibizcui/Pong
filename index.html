@@ -1110,12 +1110,11 @@ function endGame(winningSide, byTimer = false) {
   // Affiche d'abord ce qu'on a déjà en mémoire
   renderOverlayLeaderboard();
 
-  // Puis recharge depuis Supabase et rafraîchit
-  if (playerWon) {
-    saveScore(playerName, winScore, loseScore, playerSide, difficulty, Math.round(maxSpeedReached * SPEED_TO_KMH));
-  } else {
-    loadLeaderboard().then(() => renderOverlayLeaderboard());
-  }
+  // Sauvegarde toujours : won = points joueur, lost = points bot
+  const playerScore = scores[playerSide];
+  const botScore    = scores[botSide];
+  const maxSpeedKmh = Math.round(maxSpeedReached * SPEED_TO_KMH);
+  saveScore(playerName, playerScore, botScore, playerSide, difficulty, maxSpeedKmh, playerWon ? 'player' : 'bot');
 }
 
 function restartGame() {
@@ -1131,10 +1130,11 @@ function newPlayer() {
 /* ═══════════════════════════════════════════════
    LEADERBOARD — Supabase REST API
    ═══════════════════════════════════════════════ */
-async function saveScore(name, won, lost, side, tag, maxSpeed) {
+async function saveScore(name, won, lost, side, tag, maxSpeed, winner) {
   const entry = {
     name, won, lost, side, tag,
     max_speed: maxSpeed || 0,
+    winner:    winner || 'player',
     score_str: `${won}–${lost}`,
     game_date: new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
     ts: Date.now()
@@ -1172,7 +1172,7 @@ function getLocalScores() {
 async function loadLeaderboard() {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts,max_speed&limit=200`,
+      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts,max_speed,winner&limit=200`,
       { headers: SB_HEADERS }
     );
     if (!r.ok) throw new Error(await r.text());
@@ -1187,10 +1187,13 @@ async function loadLeaderboard() {
       .sort((a, b) => {
         const da = diffWeight[a.tag] || 0;
         const db = diffWeight[b.tag] || 0;
-        if (db !== da) return db - da;   // difficulté la plus haute en premier
-        if (b.won !== a.won) return b.won - a.won;   // puis plus de points
-        if (a.lost !== b.lost) return a.lost - b.lost; // puis moins encaissés
-        return a.ts - b.ts;              // puis le plus ancien (premier à l'atteindre)
+        if (db !== da) return db - da;                          // difficulté la plus haute
+        const wa = a.winner === 'player' ? 1 : 0;
+        const wb = b.winner === 'player' ? 1 : 0;
+        if (wb !== wa) return wb - wa;                          // victoire joueur avant bot
+        if (b.won !== a.won) return b.won - a.won;             // plus de points
+        if (a.lost !== b.lost) return a.lost - b.lost;         // moins encaissés
+        return a.ts - b.ts;
       })
       .slice(0, 50);
 
@@ -1211,15 +1214,20 @@ function renderLeaderboard() {
   const diffLabel = { easy:'Facile', medium:'Normal', hard:'Difficile', insane:'Insane' };
   const diffCls   = { easy:'easy', medium:'medium', hard:'hard', insane:'insane' };
   const rows = leaderboard.filter(e => e.name).slice(0,20).map((e,i) => {
-    const rc    = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
-    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
-    const dot   = `<span class="side-dot ${e.side==='left'?'dot-left':'dot-right'}"></span>`;
-    const diff  = e.tag && diffLabel[e.tag]
+    const rc      = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+    const medal   = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+    const dot     = `<span class="side-dot ${e.side==='left'?'dot-left':'dot-right'}"></span>`;
+    const diff    = e.tag && diffLabel[e.tag]
       ? `<span class="diff-badge ${diffCls[e.tag]}" style="margin-left:4px;font-size:8px">${diffLabel[e.tag]}</span>`
       : '';
+    const isBot   = e.winner === 'bot';
+    const winnerBadge = isBot
+      ? `<span style="font-size:9px;color:#E87070;border:1px solid rgba(232,112,112,.4);border-radius:4px;padding:1px 5px;margin-left:4px">🤖 Bot</span>`
+      : `<span style="font-size:9px;color:#7EC8A0;border:1px solid rgba(126,200,160,.4);border-radius:4px;padding:1px 5px;margin-left:4px">✓ Joueur</span>`;
+    const nameStyle = isBot ? 'opacity:.65' : '';
     return `<tr>
       <td class="rank-cell ${rc}">${medal}</td>
-      <td class="winner-cell">${dot}${esc(e.name)}${diff}</td>
+      <td class="winner-cell" style="${nameStyle}">${dot}${esc(e.name)}${diff}${winnerBadge}</td>
       <td class="score-cell">${esc(e.scoreStr)}</td>
       <td class="date-cell" style="color:var(--blush)">${e.max_speed ? e.max_speed + ' km/h' : '–'}</td>
       <td class="date-cell">${esc(e.date||'')}</td>
