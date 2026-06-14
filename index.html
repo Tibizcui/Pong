@@ -304,6 +304,9 @@
     <div class="vs-badge">
       <div id="timer-display">3:00</div>
       <span class="diff-badge" id="diff-badge" style="display:none"></span>
+      <div id="speed-display" style="font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.05em">
+        <span id="speed-val">–</span> km/h
+      </div>
     </div>
     <div class="score-side">
       <div class="score-name right-name" id="right-label">Droite</div>
@@ -474,13 +477,17 @@ const BOT_PROFILES = {
    STATE
    ═══════════════════════════════════════════════ */
 let playerName = "", playerSide = null;
-let gameMode   = null;   // 'solo' | 'duo'
-let difficulty = null;   // 'easy'|'medium'|'hard'|'insane'
+let gameMode   = null;
+let difficulty = null;
 let scores     = { left: 0, right: 0 };
 let gameRunning = false, gamePaused = true;
 let animId = null, frameCount = 0;
 let leaderboard = [];
 let ball, paddles;
+let maxSpeedReached = 0;   // vitesse max en unités jeu pendant la partie
+
+// Conversion unités jeu → km/h fictif (1 unité ≈ 10 km/h, fun mais cohérent)
+const SPEED_TO_KMH = 10;
 
 // Bot state
 let botSide      = null;   // côté contrôlé par le bot
@@ -577,6 +584,7 @@ function startGame() {
   scores = { left:0, right:0 };
   frameCount = 0;
   timeLeft   = GAME_DURATION;
+  maxSpeedReached = 0;
   botSide    = playerSide === 'left' ? 'right' : 'left';
 
   resetBall(); resetPaddles();
@@ -627,6 +635,8 @@ function startGame() {
 
   showScreen('game-screen');
   updateTimerDisplay();
+  const speedEl = document.getElementById('speed-val');
+  if (speedEl) speedEl.textContent = '–';
   gamePaused  = true;
   gameRunning = true;
   if (animId) cancelAnimationFrame(animId);
@@ -935,6 +945,16 @@ function update() {
 
   ball.x += ball.vx; ball.y += ball.vy;
 
+  // ── Vitesse max ──
+  const currentSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+  if (currentSpeed > maxSpeedReached) maxSpeedReached = currentSpeed;
+  // Mise à jour affichage toutes les 6 frames (évite le clignotement)
+  if (frameCount % 6 === 0) {
+    const kmh = Math.round(currentSpeed * SPEED_TO_KMH);
+    const el  = document.getElementById('speed-val');
+    if (el) el.textContent = kmh;
+  }
+
   if (ball.y - ball.r <= 0)  { ball.y = ball.r;      ball.vy *= -1; }
   if (ball.y + ball.r >= GH) { ball.y = GH - ball.r; ball.vy *= -1; }
 
@@ -1092,7 +1112,7 @@ function endGame(winningSide, byTimer = false) {
 
   // Puis recharge depuis Supabase et rafraîchit
   if (playerWon) {
-    saveScore(playerName, winScore, loseScore, playerSide, difficulty);
+    saveScore(playerName, winScore, loseScore, playerSide, difficulty, Math.round(maxSpeedReached * SPEED_TO_KMH));
   } else {
     loadLeaderboard().then(() => renderOverlayLeaderboard());
   }
@@ -1111,9 +1131,10 @@ function newPlayer() {
 /* ═══════════════════════════════════════════════
    LEADERBOARD — Supabase REST API
    ═══════════════════════════════════════════════ */
-async function saveScore(name, won, lost, side, tag) {
+async function saveScore(name, won, lost, side, tag, maxSpeed) {
   const entry = {
     name, won, lost, side, tag,
+    max_speed: maxSpeed || 0,
     score_str: `${won}–${lost}`,
     game_date: new Date().toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }),
     ts: Date.now()
@@ -1151,7 +1172,7 @@ function getLocalScores() {
 async function loadLeaderboard() {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts&limit=200`,
+      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts,max_speed&limit=200`,
       { headers: SB_HEADERS }
     );
     if (!r.ok) throw new Error(await r.text());
@@ -1200,10 +1221,11 @@ function renderLeaderboard() {
       <td class="rank-cell ${rc}">${medal}</td>
       <td class="winner-cell">${dot}${esc(e.name)}${diff}</td>
       <td class="score-cell">${esc(e.scoreStr)}</td>
+      <td class="date-cell" style="color:var(--blush)">${e.max_speed ? e.max_speed + ' km/h' : '–'}</td>
       <td class="date-cell">${esc(e.date||'')}</td>
     </tr>`;
   }).join('');
-  el.innerHTML = `<table class="lb-table"><thead><tr><th>#</th><th>Joueur · Difficulté</th><th>Score</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.innerHTML = `<table class="lb-table"><thead><tr><th>#</th><th>Joueur · Difficulté</th><th>Score</th><th>⚡ Max</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderLBPreview() {
@@ -1244,6 +1266,7 @@ function renderOverlayLeaderboard() {
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 4px;border-bottom:1px solid rgba(255,255,255,.04);${style}">
       <span style="font-size:12px;min-width:22px">${medal}</span>
       <span style="flex:1;font-size:12px;font-weight:600;color:var(--cream);display:flex;align-items:center;flex-wrap:wrap;gap:2px">${esc(e.name)}${diff}</span>
+      <span style="color:var(--blush);font-size:11px;margin-right:8px;white-space:nowrap">${e.max_speed ? e.max_speed + ' km/h' : ''}</span>
       <span style="font-family:'Playfair Display',serif;color:var(--gold);font-size:13px">${esc(e.scoreStr)}</span>
     </div>`;
   }).join('');
