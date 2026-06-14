@@ -381,7 +381,7 @@
    CONFIG
    ═══════════════════════════════════════════════ */
 const JSONBIN_CONFIG = {
-  enabled: false,
+  enabled: true,
   binId:   "6a2f182bf5f4af5e29f1bee2",
   apiKey:  "$2a$10$qc7TJpfXzYXYkhoHQfd7K.exHs61D/JjJRU77Vx/FeOttoDmR8DBm"
 };
@@ -1090,17 +1090,17 @@ async function saveScore(name, won, lost, side, tag) {
 
   if (JSONBIN_CONFIG.enabled) {
     try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Master-Key':JSONBIN_CONFIG.apiKey} });
+      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Access-Key':JSONBIN_CONFIG.apiKey} });
       const d = await r.json();
       const remote = (d.record || []);
       remote.push(entry); remote.sort((a,b) => b.won-a.won || a.lost-b.lost || a.ts-b.ts);
       const top = remote.slice(0,50);
       await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
-        method:'PUT', headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_CONFIG.apiKey},
+        method:'PUT', headers:{'Content-Type':'application/json','X-Access-Key':JSONBIN_CONFIG.apiKey},
         body: JSON.stringify(top)
       });
       leaderboard = top; showToast('Score sauvegardé ! 🏆');
-    } catch { leaderboard = local; showToast('Score sauvegardé localement ✓'); }
+    } catch(err) { console.error('JSONBin save error:', err); leaderboard = local; showToast('Score sauvegardé localement ✓'); }
   } else { leaderboard = local; showToast('Score sauvegardé ✓'); }
 }
 
@@ -1111,9 +1111,9 @@ function getLocalScores() {
 async function loadLeaderboard() {
   if (JSONBIN_CONFIG.enabled) {
     try {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Master-Key':JSONBIN_CONFIG.apiKey} });
-      const d = await r.json(); leaderboard = d.record || [];
-    } catch { leaderboard = getLocalScores(); }
+      const r = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, { headers:{'X-Access-Key':JSONBIN_CONFIG.apiKey} });
+      const d = await r.json(); leaderboard = (d.record || []).filter(e => e.name);
+    } catch(err) { console.error('JSONBin load error:', err); leaderboard = getLocalScores(); }
   } else { leaderboard = getLocalScores(); }
   renderLeaderboard(); renderLBPreview();
 }
