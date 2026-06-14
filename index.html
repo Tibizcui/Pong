@@ -1224,13 +1224,18 @@ function renderLeaderboard() {
       : '';
     const isBot   = e.winner === 'bot';
     const winnerBadge = isBot
-      ? `<span style="font-size:9px;color:#E87070;border:1px solid rgba(232,112,112,.4);border-radius:4px;padding:1px 5px;margin-left:4px">🤖 Bot</span>`
-      : `<span style="font-size:9px;color:#7EC8A0;border:1px solid rgba(126,200,160,.4);border-radius:4px;padding:1px 5px;margin-left:4px">✓ Joueur</span>`;
-    const nameStyle = isBot ? 'opacity:.65' : '';
+      ? `<span style="font-size:9px;color:#E87070;border:1px solid rgba(232,112,112,.4);border-radius:4px;padding:1px 5px;margin-left:4px">🤖 Bot gagne</span>`
+      : '';
+    const nameStyle = isBot ? 'opacity:.7' : '';
+    // Score : toujours affiché "Joueur X – Bot Y" avec couleur selon vainqueur
+    const [playerPts, botPts] = (e.scoreStr || '0–0').split('–');
+    const scoreHtml = isBot
+      ? `<span style="color:var(--muted)">${playerPts}</span><span style="color:var(--muted)"> – </span><span style="color:#E87070;font-weight:700">${botPts}🤖</span>`
+      : `<span style="color:var(--gold);font-weight:700">${playerPts}</span><span style="color:var(--muted)"> – </span><span style="color:var(--muted)">${botPts}</span>`;
     return `<tr>
       <td class="rank-cell ${rc}">${medal}</td>
       <td class="winner-cell" style="${nameStyle}">${dot}${esc(e.name)}${diff}${winnerBadge}</td>
-      <td class="score-cell">${esc(e.scoreStr)}</td>
+      <td class="score-cell" style="font-family:'Playfair Display',serif">${scoreHtml}</td>
       <td class="date-cell" style="color:var(--blush)">${e.max_speed ? e.max_speed + ' km/h' : '–'}</td>
       <td class="date-cell">${esc(e.date||'')}</td>
     </tr>`;
@@ -1244,13 +1249,18 @@ function renderLBPreview() {
   const diffLabel = { easy:'Facile', medium:'Normal', hard:'Difficile', insane:'Insane' };
   const diffCls   = { easy:'easy', medium:'medium', hard:'hard', insane:'insane' };
   el.innerHTML = leaderboard.slice(0,3).map((e,i) => {
-    const medal = i===0?'🥇':i===1?'🥈':'🥉';
-    const diff  = e.tag && diffLabel[e.tag]
+    const medal  = i===0?'🥇':i===1?'🥈':'🥉';
+    const diff   = e.tag && diffLabel[e.tag]
       ? `<span class="diff-badge ${diffCls[e.tag]}" style="font-size:8px;padding:1px 5px;margin-left:5px">${diffLabel[e.tag]}</span>`
       : '';
+    const isBot  = e.winner === 'bot';
+    const [playerPts, botPts] = (e.scoreStr || '0–0').split('–');
+    const scoreHtml = isBot
+      ? `<span style="color:var(--muted)">${playerPts} – </span><span style="color:#E87070;font-weight:700">${botPts}🤖</span>`
+      : `<span style="color:var(--gold);font-weight:700">${playerPts}</span><span style="color:var(--muted)"> – ${botPts}</span>`;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-      <span style="font-size:12px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">${medal} <strong>${esc(e.name)}</strong>${diff}</span>
-      <span style="color:var(--gold);font-family:'Playfair Display',serif;font-size:13px;white-space:nowrap;margin-left:8px">${esc(e.scoreStr)}</span>
+      <span style="font-size:12px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;${isBot?'opacity:.7':''}">${medal} <strong>${esc(e.name)}</strong>${diff}</span>
+      <span style="font-family:'Playfair Display',serif;font-size:13px;white-space:nowrap;margin-left:8px">${scoreHtml}</span>
     </div>`;
   }).join('');
 }
