@@ -1186,7 +1186,7 @@ function getLocalScores() {
 async function loadLeaderboard() {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts,max_speed,winner&tag=in.(easy,medium,hard,insane)&limit=200`,
+      `${SB_URL}/rest/v1/scores?select=name,won,lost,side,tag,score_str,game_date,ts,max_speed,winner&limit=200`,
       { headers: SB_HEADERS }
     );
     if (!r.ok) throw new Error(await r.text());
